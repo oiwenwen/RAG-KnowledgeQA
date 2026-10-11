@@ -4,9 +4,11 @@ from pathlib import Path
 import gradio as gr
 from numpy import dot
 from numpy.linalg import norm
+from dotenv import load_dotenv
 
 # ========== 配置区 ==========
-os.environ["DASHSCOPE_API_KEY"] = "sk-ws-H.PERIMDR.VRKH.MEUCIBtgY2J-UZDsKe0aYEjI9hmDVb3nkpsb265cA-62kpyGAiEA1mH4hA3KA2cmr65n6DwmQQvZ4zst9YQDTvep5nqEvIA"
+# 从本地 .env 文件读取 DASHSCOPE_API_KEY（.env 已被 .gitignore 忽略，不会上传）
+load_dotenv()
 # 向量库临时保存路径
 VECTOR_STORE_PATH = "temp_faiss_index"
 # 对话历史保留轮数 & 查询改写使用轮数

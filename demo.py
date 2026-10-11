@@ -2,8 +2,11 @@ import os
 import traceback
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # ========== 配置区 ==========
-os.environ["DASHSCOPE_API_KEY"] = "sk-ws-H.PRLEDDL.9Z4S.MEUCIQC88_wIinYHmwfZodhQV_W3dlc1CdzUo9y57UKvn5fgvQIgSrHqC_XpjV30cA2JX1jX9a5A-M_dzeaKNAHdt11aZSQ"
+# 从本地 .env 文件读取 DASHSCOPE_API_KEY（.env 已被 .gitignore 忽略，不会上传）
+load_dotenv()
 
 # 文档路径
 DOC_FILE_PATH = "test.txt"

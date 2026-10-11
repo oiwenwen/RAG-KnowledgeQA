@@ -1,0 +1,27 @@
+# ===== 运行产物：向量库索引与分块缓存（程序会自动生成，无需上传）=====
+faiss_index/
+temp_faiss_index/
+chunks.pkl
+
+# ===== 密钥 / 环境变量（内含 API Key，绝对不能上传）=====
+.env
+*.key
+
+# ===== Python 缓存与虚拟环境 =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+# ===== 日志与临时文件 =====
+*.log
+*.tmp
+*.bak
+
+# ===== IDE / 系统杂项 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
