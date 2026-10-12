@@ -356,8 +356,8 @@ def clear_chat():
     return [], "", "", "", ""
 
 # ========== 构建网页界面 ==========
-with gr.Blocks(title="本地化知识库智能问答系统") as demo:
-    gr.Markdown("# 📚 本地化知识库智能问答系统")
+with gr.Blocks(title="本地化知识库智能问答系统（预览版）") as demo:
+    gr.Markdown("# 📚 本地化知识库智能问答系统（预览版）")
     gr.Markdown("上传文档后，即可基于文档内容进行多轮智能问答，支持 TXT / PDF / Word 格式，回答自带原文引用溯源。")
     
     # 最外层：一行三列（所有列必须包裹在这同一个 Row 里面）

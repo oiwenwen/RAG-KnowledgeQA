@@ -1,4 +1,6 @@
-# 📚 本地化知识库智能问答系统（RAG）
+# 📚 本地化知识库智能问答系统（RAG · 预览版）
+
+> **当前为预览版**：核心链路（文档解析 → 混合检索 → 重排序 → 引用溯源 → 流式问答）已完整实现并可运行，界面与功能仍在持续迭代中。
 
 基于**检索增强生成（RAG, Retrieval-Augmented Generation）**技术：上传 TXT / PDF / Word 文档即可构建本地知识库，并通过网页进行**带来源溯源的多轮智能问答**。所有回答严格基于用户提供的文档内容，有效避免大模型凭空编造（幻觉）。
 
@@ -39,7 +41,7 @@
 ```
 .
 ├── demo.py                  # 命令行版：完整 RAG 基础流程演示
-├── web_app（初始版）.py      # Web 版：Gradio 界面 + 混合检索 + 多轮问答
+├── web_app（预览版）.py      # Web 版：Gradio 界面 + 混合检索 + 多轮问答
 ├── requirements.txt         # 依赖清单
 ├── .env.example             # 环境变量示例（复制为 .env 后填入 API Key）
 ├── test.txt / test.docx     # 测试文档示例
@@ -81,7 +83,7 @@ DASHSCOPE_API_KEY=sk-你的密钥
 **Web 版（推荐）**
 
 ```bash
-python "web_app（初始版）.py"
+python "web_app（预览版）.py"
 ```
 
 启动后浏览器会自动打开页面：**上传文档 → 等待知识库构建完成 → 开始提问**。
