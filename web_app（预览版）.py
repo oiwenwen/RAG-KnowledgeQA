@@ -26,6 +26,8 @@ from langchain_core.documents import Document
 import docx
 import dashscope
 import pickle
+import re
+import jieba
 
 # ========== 全局缓存 ==========
 vector_store_cache = None
@@ -33,6 +35,24 @@ bm25_cache = None
 all_chunks_cache = None
 
 # ========== 工具函数 ==========
+def tokenize(text):
+    """BM25 分词：中文走 jieba，英文/数字按单词切分并统一小写。
+
+    原先直接 list(text) 会把 "RAG" 拆成 'R','A','G'，字母级 token 的 IDF 被稀释，
+    实测查询 "RAG" 对确实包含该词的段落 BM25 得分为 0（漏检）。
+    """
+    tokens = []
+    for seg in jieba.cut(text):
+        seg = seg.strip()
+        if not seg:
+            continue
+        if re.fullmatch(r"[A-Za-z0-9_.\-]+", seg):
+            # 纯 ASCII 片段按字母/数字词切分并小写：RAG-KnowledgeQA -> rag, knowledge, qa
+            tokens.extend(t.lower() for t in re.findall(r"[A-Za-z]+|\d+", seg))
+        else:
+            tokens.append(seg)
+    return tokens
+
 def load_document(file_path):
     """读取不同格式文档"""
     file_path = Path(file_path)
@@ -98,7 +118,7 @@ def build_vector_store(file_obj):
     vector_store_cache = vector_store
     
     # 预构建BM25索引存入缓存
-    tokenized_corpus = [list(doc) for doc in chunks]
+    tokenized_corpus = [tokenize(doc) for doc in chunks]
     bm25_cache = BM25Okapi(tokenized_corpus)
     
     # 返回：上传状态 + 空对话历史
@@ -142,16 +162,29 @@ def answer_question(query, chat_history):
 改写后的问题："""
     
     # 调用大模型执行改写（非流式）
-    rewrite_resp = dashscope.Generation.call(
-        model="qwen-turbo",
-        prompt=rewrite_prompt,
-        result_format="text",
-        stream=False
-    )
-    # 提取改写后的问题，去除首尾空白，空值兜底
-    rewritten_query = rewrite_resp.output.text.strip()
-    if not rewritten_query:
+    # 失败（限流 429 / 网络异常 / 配额不足）时降级为直接用原问题检索，不阻断整个问答
+    try:
+        rewrite_resp = dashscope.Generation.call(
+            model="qwen-turbo",
+            prompt=rewrite_prompt,
+            result_format="text",
+            stream=False
+        )
+    except Exception as e:
+        rewrite_resp = None
+        print("【查询改写异常】", repr(e))
+    
+    if rewrite_resp is None or getattr(rewrite_resp, "output", None) is None:
+        print("【查询改写失败】降级为使用原问题检索；code=%s message=%s" % (
+            getattr(rewrite_resp, "code", "exception"),
+            getattr(rewrite_resp, "message", ""),
+        ))
         rewritten_query = query
+    else:
+        # 提取改写后的问题，去除首尾空白，空值兜底
+        rewritten_query = rewrite_resp.output.text.strip()
+        if not rewritten_query:
+            rewritten_query = query
     print("【原问题】", query)
     print("【改写后】", rewritten_query)
     
@@ -176,14 +209,14 @@ def answer_question(query, chat_history):
         with open("chunks.pkl", "rb") as f:
             all_chunks = pickle.load(f)
         all_chunks_cache = all_chunks
-        tokenized_corpus = [list(doc) for doc in all_chunks]
+        tokenized_corpus = [tokenize(doc) for doc in all_chunks]
         bm25_cache = BM25Okapi(tokenized_corpus)
         bm25 = bm25_cache  # 修复：给局部变量赋值
     else:
         all_chunks = all_chunks_cache
         bm25 = bm25_cache
     
-    tokenized_query = list(rewritten_query)
+    tokenized_query = tokenize(rewritten_query)
     bm25_scores = bm25.get_scores(tokenized_query)
     top_bm25_idx = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:3]
     bm25_docs = [Document(page_content=all_chunks[i]) for i in top_bm25_idx]
@@ -205,13 +238,17 @@ def answer_question(query, chat_history):
     # ========== 重排序：统一语义相似度精排 ==========
     # 生成查询向量
     query_embedding = embeddings.embed_query(rewritten_query)
+    query_norm = norm(query_embedding)
+    
+    # 候选段落向量：一次批量调用（原先逐条 embed_query 会发起 N 次 HTTP 请求）
+    doc_embeddings = embeddings.embed_documents([doc.page_content for doc in combined_docs])
     
     # 计算每个候选段落和查询的余弦相似度
     scored_docs = []
-    for doc in combined_docs:
-        doc_embedding = embeddings.embed_query(doc.page_content)
+    for doc, doc_embedding in zip(combined_docs, doc_embeddings):
         # 余弦相似度计算公式
-        cos_sim = dot(query_embedding, doc_embedding) / (norm(query_embedding) * norm(doc_embedding))
+        denominator = query_norm * norm(doc_embedding)
+        cos_sim = float(dot(query_embedding, doc_embedding) / denominator) if denominator else 0.0
         scored_docs.append((cos_sim, doc))
     
     # 按相似度降序排序
@@ -285,23 +322,34 @@ def answer_question(query, chat_history):
 请给出简洁准确的回答："""
     
     # ========== 第5步：流式调用大模型 ==========
-    responses = dashscope.Generation.call(
-        model="qwen-turbo",
-        prompt=prompt,
-        result_format="text",
-        stream=True
-    )
-    answer = ""
-    usage = None
     # 用副本操作，不污染原始对话历史
     temp_chat = chat_history.copy()
     # 预先占位一条空的助手消息
     temp_chat.append({"role": "assistant", "content": ""})
+
+    try:
+        responses = dashscope.Generation.call(
+            model="qwen-turbo",
+            prompt=prompt,
+            result_format="text",
+            stream=True
+        )
+    except Exception as e:
+        temp_chat[-1]["content"] = f"❌ 生成失败：{e}"
+        yield temp_chat, "", "", "", retrieve_detail_md
+        return
+
+    answer = ""
+    usage = None
     
     for resp in responses:
-        if resp.output is None:
-            temp_chat[-1]["content"] = f"❌ 调用失败：{resp.message}"
-            yield temp_chat, "", "", "", ""
+        if getattr(resp, "output", None) is None:
+            # 限流(429)/配额/网络等错误：给出可读提示，而不是抛 AttributeError
+            code = getattr(resp, "code", "")
+            message = getattr(resp, "message", "未知错误")
+            hint = "（请求过于频繁，请稍后重试）" if "Throttl" in str(code) else ""
+            temp_chat[-1]["content"] = f"❌ 调用失败：{message}{hint}"
+            yield temp_chat, "", "", "", retrieve_detail_md
             return
         
         # 直接使用最新全量文本，不要累加
@@ -325,8 +373,11 @@ def answer_question(query, chat_history):
     for i, doc in enumerate(related_docs, 1):
         ref_text += f"[{i}] {doc.page_content.strip()}\n\n"
     
-    # 格式化Token统计
-    token_text = f"""📊 Token消耗统计
+    # 格式化Token统计（流式过程未返回 usage 时兜底，避免此处再抛异常）
+    if usage is None:
+        token_text = "📊 Token消耗统计\n（本次未返回用量信息）"
+    else:
+        token_text = f"""📊 Token消耗统计
 输入Token：{usage.input_tokens}
 输出Token：{usage.output_tokens}
 本次总计：{usage.total_tokens} Tokens"""
