@@ -17,6 +17,8 @@ MAX_HISTORY_ROUND = 2
 SIMILARITY_THRESHOLD = 0.4
 # 大模型名称（qwen-turbo 已于 2026-10-10 下架，统一改用 qwen-plus；换模型只改这里）
 LLM_MODEL = "qwen-plus"
+# 重排序模型：gte-rerank-v2 专为 query-document 相关性训练，比 embedding 余弦相似度更准
+RERANK_MODEL = "gte-rerank-v2"
 
 # ========== 导入依赖 ==========
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -245,30 +247,43 @@ def answer_question(query, chat_history):
         yield chat_history, "", "", "", ""
         return
     
-    # ========== 重排序：统一语义相似度精排 ==========
-    # 生成查询向量
-    query_embedding = embeddings.embed_query(rewritten_query)
-    query_norm = norm(query_embedding)
-    
-    # 候选段落向量：一次批量调用（原先逐条 embed_query 会发起 N 次 HTTP 请求）
-    doc_embeddings = embeddings.embed_documents([doc.page_content for doc in combined_docs])
-    
-    # 计算每个候选段落和查询的余弦相似度
-    scored_docs = []
-    for doc, doc_embedding in zip(combined_docs, doc_embeddings):
-        # 余弦相似度计算公式
-        denominator = query_norm * norm(doc_embedding)
-        cos_sim = float(dot(query_embedding, doc_embedding) / denominator) if denominator else 0.0
-        scored_docs.append((cos_sim, doc))
-    
-    # 按相似度降序排序
-    scored_docs.sort(key=lambda x: x[0], reverse=True)
-    
-    # 过滤低于阈值的低质量段落
-    filtered_docs = [(sim, doc) for sim, doc in scored_docs if float(sim) >= SIMILARITY_THRESHOLD]
-    # 最多取Top4作为最终上下文
-    related_docs = [doc for sim, doc in filtered_docs[:4]]
-    
+    # ========== 重排序：rerank 模型精排，失败降级为 embedding 余弦 ==========
+    try:
+        rerank_resp = dashscope.TextReRank.call(
+            model=RERANK_MODEL,
+            query=rewritten_query,
+            documents=[doc.page_content for doc in combined_docs],
+            top_n=min(4, len(combined_docs)),
+            return_documents=False,
+        )
+    except Exception as e:
+        rerank_resp = None
+        print("【重排序异常】", repr(e))
+
+    if rerank_resp is not None and getattr(rerank_resp, "output", None) is not None \
+            and getattr(rerank_resp.output, "results", None):
+        # rerank 路径：模型已按相关性排序并截断，无需额外阈值过滤
+        rerank_results = rerank_resp.output.results
+        scored_docs = [(float(item.relevance_score), combined_docs[item.index]) for item in rerank_results]
+        related_docs = [doc for _, doc in scored_docs]
+        rank_metric = "rerank相关度"
+        rank_pct = False
+    else:
+        # 降级路径：embedding 余弦相似度 + 阈值过滤
+        query_embedding = embeddings.embed_query(rewritten_query)
+        query_norm = norm(query_embedding)
+        doc_embeddings = embeddings.embed_documents([doc.page_content for doc in combined_docs])
+        scored_docs = []
+        for doc, doc_embedding in zip(combined_docs, doc_embeddings):
+            denominator = query_norm * norm(doc_embedding)
+            cos_sim = float(dot(query_embedding, doc_embedding) / denominator) if denominator else 0.0
+            scored_docs.append((cos_sim, doc))
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+        filtered_docs = [(sim, doc) for sim, doc in scored_docs if float(sim) >= SIMILARITY_THRESHOLD]
+        related_docs = [doc for sim, doc in filtered_docs[:4]]
+        rank_metric = "语义匹配度"
+        rank_pct = True
+
     # 兜底：过滤后无有效段落，直接返回无结果
     if not related_docs:
         chat_history.append({"role": "assistant", "content": "知识库中暂无相关内容"})
@@ -281,8 +296,12 @@ def answer_question(query, chat_history):
     for idx, (sim, doc) in enumerate(scored_docs, 1):
         # 截取前60字作为预览，去除换行
         preview_text = doc.page_content[:60].replace("\n", " ").strip() + "..."
-        sim_score = round(float(sim) * 100, 1)  # 转成百分比更直观
-        rank_content += f"#### 第 {idx} 名 · 语义匹配度 {sim_score}%\n"
+        if rank_pct:
+            sim_display = round(float(sim) * 100, 1)
+            rank_content += f"#### 第 {idx} 名 · {rank_metric} {sim_display}%\n"
+        else:
+            sim_display = round(float(sim), 4)
+            rank_content += f"#### 第 {idx} 名 · {rank_metric} {sim_display}\n"
         rank_content += f"> {preview_text}\n\n"
     
     # 2. 拼接完整的Markdown
