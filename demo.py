@@ -12,6 +12,8 @@ load_dotenv()
 DOC_FILE_PATH = "test.txt"
 # 向量库保存路径
 VECTOR_STORE_PATH = "faiss_index"
+# 大模型名称（qwen-turbo 已于 2026-10-10 下架，统一改用 qwen-plus）
+LLM_MODEL = "qwen-plus"
 
 print("【1/6】导入依赖库...")
 try:
@@ -123,7 +125,7 @@ try:
 请给出简洁准确的回答："""
 
     response = dashscope.Generation.call(
-        model="qwen-turbo",
+        model=LLM_MODEL,
         prompt=prompt,
         result_format="text"
     )

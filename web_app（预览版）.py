@@ -15,6 +15,8 @@ VECTOR_STORE_PATH = "temp_faiss_index"
 MAX_HISTORY_ROUND = 2
 # 语义相似度最低阈值（0-1，低于此值的段落直接过滤）
 SIMILARITY_THRESHOLD = 0.4
+# 大模型名称（qwen-turbo 已于 2026-10-10 下架，统一改用 qwen-plus；换模型只改这里）
+LLM_MODEL = "qwen-plus"
 
 # ========== 导入依赖 ==========
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -165,7 +167,7 @@ def answer_question(query, chat_history):
     # 失败（限流 429 / 网络异常 / 配额不足）时降级为直接用原问题检索，不阻断整个问答
     try:
         rewrite_resp = dashscope.Generation.call(
-            model="qwen-turbo",
+            model=LLM_MODEL,
             prompt=rewrite_prompt,
             result_format="text",
             stream=False
@@ -329,7 +331,7 @@ def answer_question(query, chat_history):
 
     try:
         responses = dashscope.Generation.call(
-            model="qwen-turbo",
+            model=LLM_MODEL,
             prompt=prompt,
             result_format="text",
             stream=True
