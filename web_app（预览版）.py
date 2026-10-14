@@ -97,17 +97,22 @@ def build_vector_store(file_obj):
         separators=["\n\n", "\n", "。", "，", " "]
     )
     
-    # 循环处理每个上传的文档
+    # 循环处理每个上传的文档，分块时记录来源文件名与段落序号
     for file_item in file_obj:
         raw_text = load_document(file_item.name)
-        chunks = text_splitter.split_text(raw_text)
-        all_chunks.extend(chunks)
+        pieces = text_splitter.split_text(raw_text)
+        fname = Path(file_item.name).name
+        for i, piece in enumerate(pieces):
+            all_chunks.append(Document(
+                page_content=piece,
+                metadata={"source": fname, "chunk_id": i},
+            ))
     
     chunks = all_chunks
     
     # 构建向量库
     embeddings = DashScopeEmbeddings(model="text-embedding-v2")
-    vector_store = FAISS.from_texts(chunks, embeddings)
+    vector_store = FAISS.from_documents(chunks, embeddings)
     vector_store.save_local(VECTOR_STORE_PATH)
     
     # 保存文本块副本，供BM25关键词检索使用
@@ -120,7 +125,7 @@ def build_vector_store(file_obj):
     vector_store_cache = vector_store
     
     # 预构建BM25索引存入缓存
-    tokenized_corpus = [tokenize(doc) for doc in chunks]
+    tokenized_corpus = [tokenize(doc.page_content) for doc in chunks]
     bm25_cache = BM25Okapi(tokenized_corpus)
     
     # 返回：上传状态 + 空对话历史
@@ -210,8 +215,11 @@ def answer_question(query, chat_history):
     if bm25_cache is None or all_chunks_cache is None:
         with open("chunks.pkl", "rb") as f:
             all_chunks = pickle.load(f)
+        # 兼容旧版本：早期 chunks.pkl 存的是纯字符串列表
+        if all_chunks and isinstance(all_chunks[0], str):
+            all_chunks = [Document(page_content=t) for t in all_chunks]
         all_chunks_cache = all_chunks
-        tokenized_corpus = [tokenize(doc) for doc in all_chunks]
+        tokenized_corpus = [tokenize(doc.page_content) for doc in all_chunks]
         bm25_cache = BM25Okapi(tokenized_corpus)
         bm25 = bm25_cache  # 修复：给局部变量赋值
     else:
@@ -221,7 +229,7 @@ def answer_question(query, chat_history):
     tokenized_query = tokenize(rewritten_query)
     bm25_scores = bm25.get_scores(tokenized_query)
     top_bm25_idx = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:3]
-    bm25_docs = [Document(page_content=all_chunks[i]) for i in top_bm25_idx]
+    bm25_docs = [all_chunks[i] for i in top_bm25_idx]
     
     # 3. 合并去重
     combined_docs = []
@@ -373,7 +381,10 @@ def answer_question(query, chat_history):
     # 格式化引用原文
     ref_text = "📄 引用原文（与回答中编号对应）：\n\n"
     for i, doc in enumerate(related_docs, 1):
-        ref_text += f"[{i}] {doc.page_content.strip()}\n\n"
+        src = doc.metadata.get("source", "未知来源")
+        cid = doc.metadata.get("chunk_id")
+        loc = f"（{src} 第{cid + 1}段）" if isinstance(cid, int) else f"（{src}）"
+        ref_text += f"[{i}] {loc} {doc.page_content.strip()}\n\n"
     
     # 格式化Token统计（流式过程未返回 usage 时兜底，避免此处再抛异常）
     if usage is None:
