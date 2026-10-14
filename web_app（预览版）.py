@@ -9,16 +9,14 @@ from dotenv import load_dotenv
 # ========== 配置区 ==========
 # 从本地 .env 文件读取 DASHSCOPE_API_KEY（.env 已被 .gitignore 忽略，不会上传）
 load_dotenv()
-# 向量库临时保存路径
-VECTOR_STORE_PATH = "temp_faiss_index"
-# 对话历史保留轮数 & 查询改写使用轮数
-MAX_HISTORY_ROUND = 2
-# 语义相似度最低阈值（0-1，低于此值的段落直接过滤）
-SIMILARITY_THRESHOLD = 0.4
-# 大模型名称（qwen-turbo 已于 2026-10-10 下架，统一改用 qwen-plus；换模型只改这里）
-LLM_MODEL = "qwen-plus"
-# 重排序模型：gte-rerank-v2 专为 query-document 相关性训练，比 embedding 余弦相似度更准
-RERANK_MODEL = "gte-rerank-v2"
+# ========== 可调配置：默认值 + 环境变量覆盖（.env 里设 RAG_* 即可，无需改代码） ==========
+VECTOR_STORE_PATH = os.getenv("RAG_VECTOR_STORE_PATH", "temp_faiss_index")
+MAX_HISTORY_ROUND = int(os.getenv("RAG_MAX_HISTORY_ROUND", "2"))
+SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.4"))
+CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "500"))
+CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "50"))
+LLM_MODEL = os.getenv("RAG_LLM_MODEL", "qwen-plus")  # qwen-turbo 已于 2026-10-10 下架
+RERANK_MODEL = os.getenv("RAG_RERANK_MODEL", "gte-rerank-v2")
 
 # ========== 导入依赖 ==========
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -94,8 +92,8 @@ def build_vector_store(file_obj):
     # 初始化总分块列表
     all_chunks = []
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
         separators=["\n\n", "\n", "。", "，", " "]
     )
     

@@ -8,12 +8,15 @@ from dotenv import load_dotenv
 # 从本地 .env 文件读取 DASHSCOPE_API_KEY（.env 已被 .gitignore 忽略，不会上传）
 load_dotenv()
 
-# 文档路径
-DOC_FILE_PATH = "test.txt"
+# 文档路径（.env 里设 RAG_DOC_FILE_PATH 可覆盖）
+DOC_FILE_PATH = os.getenv("RAG_DOC_FILE_PATH", "test.txt")
 # 向量库保存路径
-VECTOR_STORE_PATH = "faiss_index"
+VECTOR_STORE_PATH = os.getenv("RAG_VECTOR_STORE_PATH", "faiss_index")
 # 大模型名称（qwen-turbo 已于 2026-10-10 下架，统一改用 qwen-plus）
-LLM_MODEL = "qwen-plus"
+LLM_MODEL = os.getenv("RAG_LLM_MODEL", "qwen-plus")
+# 分块参数
+CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "500"))
+CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "50"))
 
 print("【1/6】导入依赖库...")
 try:
@@ -80,8 +83,8 @@ def load_or_build_vector_store():
 
     print("\n【3/6】文档分块...")
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
         separators=["\n\n", "\n", "。", "，", " "]
     )
     chunks = text_splitter.split_text(raw_text)
