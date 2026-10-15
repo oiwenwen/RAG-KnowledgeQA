@@ -82,54 +82,72 @@ def load_document(file_path):
         raise ValueError(f"不支持的文件格式：{suffix}")
 
 def build_vector_store(file_obj):
-    """根据上传的文档构建向量库，同时清空对话历史"""
-    # 清理旧的向量库
-    if os.path.exists(VECTOR_STORE_PATH):
-        shutil.rmtree(VECTOR_STORE_PATH)
+    """上传文档，增量构建/追加知识库。
+
+    首次上传：从零新建向量库；再次上传：只对新文档分块并向量化，
+    追加进现有索引，避免重复 embedding 已有文档（BM25 索引基于全量
+    chunk 本地重建，不调 API）。按段落内容去重，重复上传不重复入库。
+    """
+    # 读取已有 chunk（存在则增量追加，不存在则首次构建）
+    existing_chunks = []
     if os.path.exists("chunks.pkl"):
-        os.remove("chunks.pkl")
-    
-    # 初始化总分块列表
-    all_chunks = []
+        with open("chunks.pkl", "rb") as f:
+            existing_chunks = pickle.load(f)
+        # 兼容旧版本：纯字符串列表
+        if existing_chunks and isinstance(existing_chunks[0], str):
+            existing_chunks = [Document(page_content=t) for t in existing_chunks]
+
+    existing_texts = {doc.page_content for doc in existing_chunks}
+
+    # 新上传文档分块（记录来源文件名与段落序号，跳过已存在的重复段落）
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
         separators=["\n\n", "\n", "。", "，", " "]
     )
-    
-    # 循环处理每个上传的文档，分块时记录来源文件名与段落序号
+    new_chunks = []
     for file_item in file_obj:
         raw_text = load_document(file_item.name)
         pieces = text_splitter.split_text(raw_text)
         fname = Path(file_item.name).name
         for i, piece in enumerate(pieces):
-            all_chunks.append(Document(
+            if piece in existing_texts:
+                continue
+            new_chunks.append(Document(
                 page_content=piece,
                 metadata={"source": fname, "chunk_id": i},
             ))
-    
-    chunks = all_chunks
-    
-    # 构建向量库
+
     embeddings = DashScopeEmbeddings(model="text-embedding-v2")
-    vector_store = FAISS.from_documents(chunks, embeddings)
-    vector_store.save_local(VECTOR_STORE_PATH)
-    
-    # 保存文本块副本，供BM25关键词检索使用
+
+    if existing_chunks and os.path.exists(VECTOR_STORE_PATH):
+        # 增量：加载现有向量库，只对新 chunk 向量化并追加
+        vector_store = FAISS.load_local(
+            VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True
+        )
+        if new_chunks:
+            vector_store.add_documents(new_chunks)
+            vector_store.save_local(VECTOR_STORE_PATH)
+    else:
+        # 首次构建：从零新建
+        vector_store = FAISS.from_documents(new_chunks, embeddings)
+        vector_store.save_local(VECTOR_STORE_PATH)
+
+    # 合并并保存全量 chunk，供 BM25 使用
+    all_chunks = existing_chunks + new_chunks
     with open("chunks.pkl", "wb") as f:
-        pickle.dump(chunks, f)
-    
+        pickle.dump(all_chunks, f)
+
     # 更新全局缓存
     global vector_store_cache, bm25_cache, all_chunks_cache
-    all_chunks_cache = chunks
+    all_chunks_cache = all_chunks
     vector_store_cache = vector_store
-    
-    # 预构建BM25索引存入缓存
-    tokenized_corpus = [tokenize(doc.page_content) for doc in chunks]
+
+    # BM25 索引基于全量 chunk 本地重建（不调 API）
+    tokenized_corpus = [tokenize(doc.page_content) for doc in all_chunks]
     bm25_cache = BM25Okapi(tokenized_corpus)
-    
-    # 返回：上传状态 + 空对话历史
-    return f"✅ 知识库构建完成！共处理 {len(file_obj)} 个文档，解析 {len(chunks)} 个文本块。", []
+
+    return f"✅ 知识库构建完成！新增 {len(new_chunks)} 个文本块，当前共 {len(all_chunks)} 块。", []
 
 def answer_question(query, chat_history):
     # 空输入直接返回
