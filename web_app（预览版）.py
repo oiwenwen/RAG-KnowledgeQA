@@ -454,10 +454,24 @@ def clear_chat():
     """清空对话历史和所有显示"""
     return [], "", "", "", ""
 
+# ========== 主题与样式 ==========
+THEME = gr.themes.Soft(
+    primary_hue="blue",
+    secondary_hue="slate",
+    font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+)
+
+CUSTOM_CSS = """
+.gradio-container { max-width: 1500px; margin: 0 auto; }
+#app-header { text-align: center; margin-bottom: 0.4em; }
+#app-header h1 { margin-bottom: 0.15em; }
+#app-subtitle { color: #64748b; text-align: center; margin-bottom: 1.2em; }
+"""
+
 # ========== 构建网页界面 ==========
 with gr.Blocks(title="本地化知识库智能问答系统（预览版）") as demo:
-    gr.Markdown("# 📚 本地化知识库智能问答系统（预览版）")
-    gr.Markdown("上传文档后，即可基于文档内容进行多轮智能问答，支持 TXT / PDF / Word 格式，回答自带原文引用溯源。")
+    gr.Markdown("# 📚 本地化知识库智能问答系统（预览版）", elem_id="app-header")
+    gr.Markdown("上传文档 → 构建知识库 → 带来源溯源的多轮问答 · 支持 TXT / PDF / Word", elem_id="app-subtitle")
     
     # 最外层：一行三列（所有列必须包裹在这同一个 Row 里面）
     with gr.Row():
@@ -522,6 +536,6 @@ with gr.Blocks(title="本地化知识库智能问答系统（预览版）") as d
         outputs=[chatbot, question_input, ref_output, token_output, retrieve_detail_box]
     )
 
-# 启动网页
+# 启动网页（Gradio 6 起 theme/css 需传 launch 而非 Blocks）
 if __name__ == "__main__":
-    demo.launch(inbrowser=True)
+    demo.launch(inbrowser=True, theme=THEME, css=CUSTOM_CSS)
