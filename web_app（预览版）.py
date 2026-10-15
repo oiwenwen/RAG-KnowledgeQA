@@ -459,6 +459,17 @@ THEME = gr.themes.Soft(
     primary_hue="blue",
     secondary_hue="slate",
     font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+).set(
+    # 阿里云控制台风：浅灰底 + 白卡片 + 细边框 + 圆角 + 微阴影
+    background_fill_primary="#f5f6f8",
+    background_fill_secondary="#f5f6f8",
+    block_background_fill="#ffffff",
+    block_border_color="#e5e6eb",
+    block_border_width="1px",
+    block_radius="8px",
+    block_shadow="0 1px 2px rgba(0,0,0,0.04)",
+    input_background_fill="#ffffff",
+    input_border_color="#d9d9d9",
 )
 
 CUSTOM_CSS = """
@@ -473,34 +484,33 @@ with gr.Blocks(title="本地化知识库智能问答系统（预览版）") as d
     gr.Markdown("# 📚 本地化知识库智能问答系统（预览版）", elem_id="app-header")
     gr.Markdown("上传文档 → 构建知识库 → 带来源溯源的多轮问答 · 支持 TXT / PDF / Word", elem_id="app-subtitle")
     
-    # 最外层：一行三列（所有列必须包裹在这同一个 Row 里面）
-    with gr.Row():
-        # ========== 第1列：左侧上传区 ==========
-        with gr.Column(scale=1):
-            gr.Markdown("### 第一步：上传文档")
-            file_input = gr.File(label="选择文档", file_types=[".txt", ".pdf", ".docx"], file_count="multiple")
-            upload_status = gr.Textbox(label="上传状态", interactive=False, lines=2)           
-            gr.Markdown("### 消耗统计")
-            token_output = gr.Textbox(label="", interactive=False, lines=6)
-            clear_kb_btn = gr.Button("清空知识库", variant="stop")
-            clear_btn = gr.Button("清空对话", variant="secondary")
-        
-        # ========== 第2列：中间问答区 ==========
-        with gr.Column(scale=2):
-            gr.Markdown("### 第二步：对话提问")
-            chatbot = gr.Chatbot(label="对话窗口", height=400)
-            question_input = gr.Textbox(label="请输入你的问题", placeholder="例如：被告人叫什么名字？")
-            
+    with gr.Tabs():
+        # ========== Tab 1：知识库管理 ==========
+        with gr.Tab("📁 知识库管理"):
             with gr.Row():
-                submit_btn = gr.Button("提交问题", variant="primary")
-            
-            gr.Markdown("### 引用来源")
-            ref_output = gr.Textbox(label="", lines=8)
+                with gr.Column(scale=3):
+                    file_input = gr.File(label="上传文档（支持多选，增量追加）", file_types=[".txt", ".pdf", ".docx"], file_count="multiple")
+                    upload_status = gr.Textbox(label="构建状态", interactive=False, lines=2)
+                with gr.Column(scale=1):
+                    gr.Markdown("### 操作")
+                    clear_kb_btn = gr.Button("清空知识库", variant="stop")
         
-        # ========== 第3列：右侧检索详情 ==========
-        with gr.Column(scale=1):
-            with gr.Accordion("🔍 检索过程详情", open=False):
-                retrieve_detail_box = gr.Markdown(value="")
+        # ========== Tab 2：知识问答 ==========
+        with gr.Tab("💬 知识问答"):
+            with gr.Row():
+                with gr.Column(scale=3):
+                    chatbot = gr.Chatbot(label="对话", height=420)
+                    with gr.Row():
+                        question_input = gr.Textbox(label="输入问题", placeholder="例如：TDA 是什么？", scale=4)
+                        submit_btn = gr.Button("发送", variant="primary", scale=1)
+                        clear_btn = gr.Button("清空对话", scale=1)
+                    gr.Markdown("### 📊 消耗统计")
+                    token_output = gr.Textbox(label="", interactive=False, lines=4)
+                with gr.Column(scale=2):
+                    gr.Markdown("### 📄 引用来源")
+                    ref_output = gr.Textbox(label="", lines=14)
+                    with gr.Accordion("🔍 检索过程详情", open=False):
+                        retrieve_detail_box = gr.Markdown(value="")
     
     # 上传文档事件
     file_input.upload(
