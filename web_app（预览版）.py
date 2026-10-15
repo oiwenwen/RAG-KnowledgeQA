@@ -456,27 +456,37 @@ def clear_chat():
 
 # ========== 主题与样式 ==========
 THEME = gr.themes.Soft(
-    primary_hue="blue",
-    secondary_hue="slate",
+    primary_hue="green",
+    secondary_hue="green",
+    neutral_hue="slate",
     font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
 ).set(
-    # 阿里云控制台风：浅灰底 + 白卡片 + 细边框 + 圆角 + 微阴影
-    background_fill_primary="#f5f6f8",
-    background_fill_secondary="#f5f6f8",
-    block_background_fill="#ffffff",
-    block_border_color="#e5e6eb",
+    # 深色底（黑）+ 墨绿主色
+    body_background_fill="#0d1117",
+    background_fill_primary="#0d1117",
+    background_fill_secondary="#0d1117",
+    block_background_fill="#161b22",
+    block_border_color="#30363d",
     block_border_width="1px",
     block_radius="8px",
-    block_shadow="0 1px 2px rgba(0,0,0,0.04)",
-    input_background_fill="#ffffff",
-    input_border_color="#d9d9d9",
+    block_shadow="0 1px 2px rgba(0,0,0,0.4)",
+    body_text_color="#e6edf3",
+    body_text_color_subdued="#8b949e",
+    block_title_text_color="#e6edf3",
+    input_background_fill="#161b22",
+    input_border_color="#30363d",
+    input_placeholder_color="#6e7681",
+    button_primary_background_fill="#16a34a",
+    button_primary_background_fill_hover="#15803d",
+    button_primary_text_color="#ffffff",
+    link_text_color="#16a34a",
 )
 
 CUSTOM_CSS = """
 .gradio-container { max-width: 1500px; margin: 0 auto; }
 #app-header { text-align: center; margin-bottom: 0.4em; }
 #app-header h1 { margin-bottom: 0.15em; }
-#app-subtitle { color: #64748b; text-align: center; margin-bottom: 1.2em; }
+#app-subtitle { color: #8b949e; text-align: center; margin-bottom: 1.2em; }
 """
 
 # ========== 构建网页界面 ==========
