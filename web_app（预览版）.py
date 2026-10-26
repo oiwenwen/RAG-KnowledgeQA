@@ -10,7 +10,11 @@ from dotenv import load_dotenv
 # 从本地 .env 文件读取 DASHSCOPE_API_KEY（.env 已被 .gitignore 忽略，不会上传）
 load_dotenv()
 # ========== 可调配置：默认值 + 环境变量覆盖（.env 里设 RAG_* 即可，无需改代码） ==========
-VECTOR_STORE_PATH = os.getenv("RAG_VECTOR_STORE_PATH", "temp_faiss_index")
+# 路径一律锚定到脚本所在目录：否则从别的工作目录启动时，
+# 会在当前目录下另建一份 temp_faiss_index / chunks.pkl，导致"知识库明明建过却查不到"。
+BASE_DIR = Path(__file__).resolve().parent
+VECTOR_STORE_PATH = os.getenv("RAG_VECTOR_STORE_PATH") or str(BASE_DIR / "temp_faiss_index")
+CHUNKS_PATH = str(BASE_DIR / "chunks.pkl")
 MAX_HISTORY_ROUND = int(os.getenv("RAG_MAX_HISTORY_ROUND", "2"))
 SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.4"))
 CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "500"))
@@ -68,7 +72,9 @@ def load_document(file_path):
         text = ""
         reader = PdfReader(file_path)
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            # 扫描件/纯图片页的 extract_text() 会返回 None，直接相加会 TypeError
+            page_text = page.extract_text() or ""
+            text += page_text + "\n"
         return text
     
     elif suffix == ".docx":
@@ -90,8 +96,8 @@ def build_vector_store(file_obj):
     """
     # 读取已有 chunk（存在则增量追加，不存在则首次构建）
     existing_chunks = []
-    if os.path.exists("chunks.pkl"):
-        with open("chunks.pkl", "rb") as f:
+    if os.path.exists(CHUNKS_PATH):
+        with open(CHUNKS_PATH, "rb") as f:
             existing_chunks = pickle.load(f)
         # 兼容旧版本：纯字符串列表
         if existing_chunks and isinstance(existing_chunks[0], str):
@@ -113,6 +119,9 @@ def build_vector_store(file_obj):
         for i, piece in enumerate(pieces):
             if piece in existing_texts:
                 continue
+            # 同一次上传内部的重复段落也要跳过：两个文件里有相同段落、
+            # 或同一文件里重复出现时，否则会被重复入库、重复占用检索名额。
+            existing_texts.add(piece)
             new_chunks.append(Document(
                 page_content=piece,
                 metadata={"source": fname, "chunk_id": i},
@@ -128,14 +137,24 @@ def build_vector_store(file_obj):
         if new_chunks:
             vector_store.add_documents(new_chunks)
             vector_store.save_local(VECTOR_STORE_PATH)
-    else:
-        # 首次构建：从零新建
-        vector_store = FAISS.from_documents(new_chunks, embeddings)
+    elif new_chunks:
+        # 首次构建，或 chunks.pkl 与向量索引不一致（索引被删/损坏）时整体重建。
+        # 重建必须用「已有 + 新增」全量，否则旧段落会从索引里消失，
+        # 而 chunks.pkl 里还留着它们 → BM25 能命中、向量检索永远命不中。
+        all_for_build = (existing_chunks + new_chunks) if existing_chunks else new_chunks
+        vector_store = FAISS.from_documents(all_for_build, embeddings)
         vector_store.save_local(VECTOR_STORE_PATH)
+        # 已有 chunk 被重新向量化进新库，避免下面再加一遍
+        new_chunks = []
+    else:
+        # 没有新内容可加（比如整份文档重复上传），保持原样
+        vector_store = FAISS.load_local(
+            VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True
+        ) if os.path.exists(VECTOR_STORE_PATH) else None
 
     # 合并并保存全量 chunk，供 BM25 使用
     all_chunks = existing_chunks + new_chunks
-    with open("chunks.pkl", "wb") as f:
+    with open(CHUNKS_PATH, "wb") as f:
         pickle.dump(all_chunks, f)
 
     # 更新全局缓存
@@ -160,14 +179,15 @@ def answer_question(query, chat_history):
     yield chat_history, "", "", "", ""
     
     # ========== 第2步：检查知识库 ==========
-    if not os.path.exists(VECTOR_STORE_PATH) or not os.path.exists("chunks.pkl"):
+    if not os.path.exists(VECTOR_STORE_PATH) or not os.path.exists(CHUNKS_PATH):
         chat_history.append({"role": "assistant", "content": "⚠️ 请先上传文档构建知识库！"})
         yield chat_history, "", "", "", ""
         return
     
     # ========== 第2.5步：查询改写（结合历史对话补全语义） ==========
-    # 取最近几轮对话用于改写
-    history_for_rewrite = chat_history[-MAX_HISTORY_ROUND * 2:]
+    # 取最近几轮对话用于改写（排除刚追加进去的当前提问，
+    # 否则当前问题会在提示词里出现两次：历史里一次、"用户当前问题"一次）
+    history_for_rewrite = chat_history[:-1][-MAX_HISTORY_ROUND * 2:]
     rewrite_history_text = ""
     for msg in history_for_rewrite:
         if msg["role"] == "user":
@@ -231,7 +251,7 @@ def answer_question(query, chat_history):
     
     # BM25检索：优先读缓存
     if bm25_cache is None or all_chunks_cache is None:
-        with open("chunks.pkl", "rb") as f:
+        with open(CHUNKS_PATH, "rb") as f:
             all_chunks = pickle.load(f)
         # 兼容旧版本：早期 chunks.pkl 存的是纯字符串列表
         if all_chunks and isinstance(all_chunks[0], str):
@@ -342,9 +362,9 @@ def answer_question(query, chat_history):
     for i, doc in enumerate(related_docs, 1):
         context += f"[{i}] {doc.page_content}\n\n"
     
-    # 拼接历史对话
+    # 拼接历史对话（同样排除当前提问，当前问题单独放进提示词）
     history_text = ""
-    history_messages = chat_history[-MAX_HISTORY_ROUND * 2:]
+    history_messages = chat_history[:-1][-MAX_HISTORY_ROUND * 2:]
     for msg in history_messages:
         if msg["role"] == "user":
             history_text += f"用户：{msg['content']}\n"
@@ -439,8 +459,8 @@ def clear_knowledge_base():
     
     if os.path.exists(VECTOR_STORE_PATH):
         shutil.rmtree(VECTOR_STORE_PATH)
-    if os.path.exists("chunks.pkl"):
-        os.remove("chunks.pkl")
+    if os.path.exists(CHUNKS_PATH):
+        os.remove(CHUNKS_PATH)
     
     # 清空内存缓存
     vector_store_cache = None
