@@ -15,6 +15,22 @@
 - 重置启用账号的密码后，旧登录状态与旧密码均不可用；用新密码登录后会话和引用不变。重置停用账号的密码不会自动恢复该账号。
 - 运行 `python -X utf8 evaluation/check_account_management.py` 可离线检查同一套回调和 SQLite 数据迁移。测试使用独立临时目录，不修改现有账号和知识库。
 
+### 备份与恢复
+
+先关闭应用，再在项目目录运行以下 PowerShell 命令。备份和恢复的目标目录都必须尚不存在：
+
+```powershell
+python -m rag_system.backup backup .\backups\demo-backup
+python -m rag_system.backup restore .\backups\demo-backup .\restores\demo-check
+$env:RAG_DATA_DIR = (Resolve-Path .\restores\demo-check).Path
+python app.py
+```
+
+- 备份包含 SQLite 中的账号、会话、引用、索引和发布记录，以及当前和发布记录引用的原始文档。备份目录可整体移动，但不要直接用应用打开备份目录；先恢复到新目录。
+- 恢复会校验数据库和文档指纹，重写原件路径，不会覆盖运行库。请保留原本的模型配置（尤其是嵌入模型）；备份不含 `.env`、密钥或单独导出的日志。数据库本身仍包含历史问答和密码哈希，应妥善保管，勿上传 GitHub。
+- 验收恢复库时，用原账号登录，核对新问答、历史引用和发布记录。关闭恢复版应用后，在该终端还原原本的 `RAG_DATA_DIR`（原先未设置时执行 `Remove-Item Env:RAG_DATA_DIR`），再启动日常使用的库。
+- 运行 `python -X utf8 evaluation/check_backup_restore.py` 可复现隔离验收，无需百炼。
+
 导入模拟资料后，执行 `python evaluation/run_evaluation.py` 比较向量、BM25、混合和混合加重排序。添加 `--generate` 可测回答关键词命中、引用编号有效性和拒答。结果默认保存在 `data/evaluation_results.json`，关键词与引用编号指标需要结合人工核对判断答案是否忠实于原文。
 
 <details>

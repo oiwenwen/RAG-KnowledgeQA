@@ -3,6 +3,8 @@ faiss_index/
 temp_faiss_index/
 chunks.pkl
 data/
+/backups/
+/restores/
 
 # ===== 密钥 / 环境变量（内含 API Key，绝对不能上传）=====
 .env
