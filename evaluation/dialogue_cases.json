@@ -1,0 +1,13 @@
+[
+  {"id":"D01","history":["其他城市每晚住宿报销上限是多少？"],"question":"一线城市呢？","answer":["600"],"evidence":{"employee_handbook.md":["600 元"]}},
+  {"id":"D02","history":["一线城市每晚住宿报销上限是多少？"],"question":"那其他城市呢？","answer":["500"],"evidence":{"employee_handbook.md":["500 元"]}},
+  {"id":"D03","history":["其他城市每晚住宿报销上限是多少？","员工培训有什么要求？","新员工何时完成安全课程？","转正需要什么条件？","如何申请年假？","病假证明何时补交？","设备遗失多久内报告？"],"question":"回到刚才的住宿报销，其他城市按新版怎么算？","answer":["500"],"evidence":{"employee_handbook.md":["500 元"]}},
+  {"id":"D04","history":["其他城市的住宿上限是多少？"],"question":"每晚530元住两晚，一共超多少？","answer":["60元"],"evidence":{"employee_handbook.md":["500 元"]}},
+  {"id":"D05","history":["按旧员工手册，其他城市住宿上限是多少？"],"question":"按当前生效的员工手册，现在是多少？","answer":["500"],"evidence":{"employee_handbook.md":["500 元"]}},
+  {"id":"D06","history":["年假提前多久申请？设备遗失后多久内要报告？"],"question":"那现在是多少？","answer":["年假","设备","30分钟"],"evidence":{"employee_handbook.md":["提前三个工作日"],"information_security.md":["30 分钟"]}},
+  {"id":"D07","history":["员工请假有哪些规定？"],"question":"病假证明补交时限和设备遗失报告时限分别是什么？","answer":["工作日","30分钟"],"evidence":{"employee_handbook.md":["返岗后三个工作日"],"information_security.md":["30 分钟"]}},
+  {"id":"D08","history":["专业版提供哪些服务？"],"question":"那一年到底多少钱？","action":"abstain","evidence":{"product_guide.md":["不包含报价信息"]}},
+  {"id":"D09","history":["新员工试用期是多久？"],"question":"要转正的话，需要哪两个人确认？","answer":["直属主管","部门负责人"],"evidence":{"employee_handbook.md":["共同确认"]}},
+  {"id":"D10","history":["其他城市的住宿上限是多少？"],"question":"在一线城市住一晚花620元，另在其他城市住两晚各530元，各超多少，合计多少？","answer":["20元","60元","80元"],"evidence":{"employee_handbook.md":["600 元","500 元"]}},
+  {"id":"D11","history":["我需要办差旅报销、申请年假、补交病假证明，还要报告设备遗失。"],"question":"那我现在要提交哪份材料？","action":"clarify"}
+]
